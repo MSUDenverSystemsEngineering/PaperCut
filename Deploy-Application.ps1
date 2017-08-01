@@ -132,9 +132,10 @@ Try {
 		}
 
 		## <Perform Installation tasks here>
-				#$exitCode = Execute-MSI -Action "Install" -Path "FusionAgentDesktopSetup.msi" -Parameters "ALLUSERS=1 REBOOT=ReallySuppress /QN" -PassThru
-				#If (($exitCode.ExitCode -ne "0") -and ($mainExitCode -ne "3010")) { $mainExitCode = $exitCode.ExitCode }
+				Set-RegistryKey -Key 'HKLM\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut' -Value '\\vmwpt04\PCClient\win\pc-client-local-cache.exe' -Type STRING
 
+				## Pass Soft reboot so the PaperCut client can install
+				$mainExitCode = 3010
 
 		##*===============================================
 		##* POST-INSTALLATION
@@ -174,6 +175,14 @@ Try {
 		}
 
 		# <Perform Uninstallation tasks here>
+
+				If (Get-RegistryKey -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -Value "PaperCut") {
+						Remove-RegistryKey -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -Name "PaperCut"
+				}
+
+				If (Test-Path "C:\Cache\pc-client.exe*") {
+						Remove-File -Path "C:\Cache\pc-client.exe*" -Recurse
+			  }
 
 
 		##*===============================================
