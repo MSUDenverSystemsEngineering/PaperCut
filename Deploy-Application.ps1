@@ -1,6 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
 	This script performs the installation or uninstallation of an application(s).
+	# LICENSE #
+	PowerShell App Deployment Toolkit - Provides a set of functions to perform common application deployment tasks on Windows.
+	Copyright (C) 2017 - Sean Lillis, Dan Cunningham, Muhammad Mashwani, Aman Motazedian.
+	This program is free software: you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+	You should have received a copy of the GNU Lesser General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.
 .DESCRIPTION
 	The script is provided as a template to perform an install or uninstall of an application(s).
 	The script either performs an "Install" deployment type or an "Uninstall" deployment type.
@@ -33,6 +38,8 @@
 	http://psappdeploytoolkit.com
 #>
 [CmdletBinding()]
+## Suppress PSScriptAnalyzer errors for not using declared variables during AppVeyor build
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Suppresses AppVeyor errors on informational variables below")]
 Param (
 	[Parameter(Mandatory=$false)]
 	[ValidateSet('Install','Uninstall')]
@@ -56,15 +63,15 @@ Try {
 	##* VARIABLE DECLARATION
 	##*===============================================
 	## Variables: Application
-	[string]$appVendor = 'PaperCut Software International'
-	[string]$appName = 'PaperCut'
-	[string]$appVersion = ''
-	[string]$appArch = ''
+	[string]$appVendor = ''
+	[string]$appName = 'PaperCut MF Client'
+	[string]$appVersion = '19.2.1'
+	[string]$appArch = 'x64'
 	[string]$appLang = 'EN'
 	[string]$appRevision = '01'
-	[string]$appScriptVersion = '1.0.0'
-	[string]$appScriptDate = '08/01/2017'
-	[string]$appScriptAuthor = 'Reuther'
+	[string]$appScriptVersion = '3.7.0.1'
+	[string]$appScriptDate = '01/19/2020'
+	[string]$appScriptAuthor = 'Jordan Hamilton (original) / Steve Patterson (update)'
 	##*===============================================
 	## Variables: Install Titles (Only set here to override defaults set by the toolkit)
 	[string]$installName = ''
@@ -78,8 +85,8 @@ Try {
 
 	## Variables: Script
 	[string]$deployAppScriptFriendlyName = 'Deploy Application'
-	[version]$deployAppScriptVersion = [version]'3.6.9'
-	[string]$deployAppScriptDate = '02/12/2017'
+	[version]$deployAppScriptVersion = [version]'3.7.0'
+	[string]$deployAppScriptDate = '02/13/2018'
 	[hashtable]$deployAppScriptParameters = $psBoundParameters
 
 	## Variables: Environment
@@ -111,14 +118,60 @@ Try {
 		##*===============================================
 		[string]$installPhase = 'Pre-Installation'
 
-		## Show Welcome Message, close applications if required, verify there is enough disk space to complete the install, and persist the prompt
-		Show-InstallationWelcome -CloseApps 'iexplore' -CheckDiskSpace -PersistPrompt
+		## Show Welcome Message, close PaperCut if needed, verify there is enough disk space to complete the install, and persist the prompt
+		Show-InstallationWelcome -CloseApps 'pc-client' -CheckDiskSpace -PersistPrompt
 
 		## Show Progress Message (with the default message)
 		Show-InstallationProgress
 
 		## <Perform Pre-Installation tasks here>
 
+		## Remove cached files if detected
+		If (Test-Path -Path "${envSystemDrive}\Cache" -PathType 'Container') {
+			Write-Log -Message "Removing cached installation files..." -Severity 1
+			Remove-File -Path "${envSystemDrive}\Cache" -Recurse
+			Remove-Folder -Path "${envSystemDrive}\Cache" -ContinueOnError $true
+		}
+
+
+		## Remove MSI Installation if detected
+		If (Get-InstalledApplication -Name 'PaperCut MF Client') {
+			Remove-MSIApplications -Name 'PaperCut MF Client'
+		}
+
+		## Clean up Program Files folders
+		If (Test-Path -Path "$envProgramFiles\PaperCut MF Client" -PathType 'Container') {
+			Remove-File -Path "$envProgramFiles\PaperCut MF Client" -Recurse
+			Remove-Folder "$envProgramFiles\PaperCut MF Client" -ContinueOnError $true
+		}
+
+		If (Test-Path -Path "$envProgramFiles\PaperCut" -PathType 'Container') {
+			Remove-File -Path "$envProgramFiles\PaperCut" -Recurse
+			Remove-Folder "$envProgramFiles\PaperCut" -ContinueOnError $true
+		}
+
+		## Clean up Program Files (x86) folders
+		If (Test-Path -Path "$envProgramFilesX86\PaperCut MF Client" -PathType 'Container') {
+			Remove-File -Path "$envProgramFilesX86\PaperCut MF Client" -Recurse
+			Remove-Folder "$envProgramFilesX86\PaperCut MF Client" -ContinueOnError $true
+		}
+
+		## Clean up Program Files (x86) folders
+		If (Test-Path -Path "$envProgramFilesX86\PaperCut" -PathType 'Container') {
+			Remove-File -Path "$envProgramFilesX86\PaperCut" -Recurse
+			Remove-Folder "$envProgramFilesX86\PaperCut" -ContinueOnError $true
+		}
+
+		## Remove remaining registry keys
+		If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
+
+		If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
 
 		##*===============================================
 		##* INSTALLATION
@@ -132,20 +185,31 @@ Try {
 		}
 
 		## <Perform Installation tasks here>
-				Set-RegistryKey -Key 'HKLM\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut' -Value '\\vmwpt04\PCClient\win\pc-client-local-cache.exe' -Type STRING
-
-				## Pass Soft reboot so the PaperCut client can install
-				$mainExitCode = 3010
-
+		$exitCode = Execute-MSI -Action "Install" -Path "pc-client-admin-deploy.msi" -Parameters "REBOOT=ReallySuppress /QN /norestart ALLUSERS=1" -PassThru
+		If (($exitCode.ExitCode -ne "0") -and ($mainExitCode -ne "3010")) { $mainExitCode = $exitCode.ExitCode }
 		##*===============================================
 		##* POST-INSTALLATION
 		##*===============================================
 		[string]$installPhase = 'Post-Installation'
 
 		## <Perform Post-Installation tasks here>
+		If (Test-Path -Path "${envProgramFilesX86}\PaperCut MF Client\pc-client.exe" -PathType 'Leaf') {
+			$installLocation = "${envProgramFilesX86}\PaperCut MF Client\pc-client.exe"
+		} ElseIf (Test-Path -Path "${envProgramFiles}\PaperCut MF Client\pc-client.exe" -PathType 'Leaf') {
+			$installLocation = "${envProgramFiles}\PaperCut MF Client\pc-client.exe"
+		}
+
+		## Set a startup registry value if the client is found
+		If ($installLocation) {
+			Set-RegistryKey -Key "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "PaperCut" -Value "`"${installLocation}`" --silent" -Type "String"
+		} Else {
+			Write-Log -Message "Couldn't detect the PaperCut client after installation. Startup registry values won't be configured." -Severity 3
+		}
 
 		## Display a message at the end of the install
-		If (-not $useDefaultMsi) {}
+		If (-not $useDefaultMsi) {
+
+		}
 	}
 	ElseIf ($deploymentType -ieq 'Uninstall')
 	{
@@ -154,8 +218,8 @@ Try {
 		##*===============================================
 		[string]$installPhase = 'Pre-Uninstallation'
 
-		## Show Welcome Message, close applications with a 60 second countdown before automatically closing
-		Show-InstallationWelcome -CloseApps 'iexplore' -CloseAppsCountdown 60
+		## Show Welcome Message, close PaperCut with a 60 second countdown before automatically closing
+		Show-InstallationWelcome -CloseApps 'pc-client' -CloseAppsCountdown 60
 
 		## Show Progress Message (with the default message)
 		Show-InstallationProgress
@@ -175,15 +239,8 @@ Try {
 		}
 
 		# <Perform Uninstallation tasks here>
-
-				If (Get-RegistryKey -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -Value "PaperCut") {
-						Remove-RegistryKey -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -Name "PaperCut"
-				}
-
-				If (Test-Path "C:\Cache\pc-client.exe*") {
-						Remove-File -Path "C:\Cache\pc-client.exe*" -Recurse
-			  }
-
+		$exitCode = Execute-MSI -Action 'Uninstall' -Path "pc-client-admin-deploy.msi" -PassThru
+		If (($exitCode.ExitCode -ne "0") -and ($mainExitCode -ne "3010")) { $mainExitCode = $exitCode.ExitCode }
 
 		##*===============================================
 		##* POST-UNINSTALLATION
@@ -191,7 +248,10 @@ Try {
 		[string]$installPhase = 'Post-Uninstallation'
 
 		## <Perform Post-Uninstallation tasks here>
-
+		If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
 
 	}
 
