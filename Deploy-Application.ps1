@@ -70,9 +70,9 @@ Try {
     ##*===============================================
     ## Variables: Application
     [string]$appVendor = ''
-    [string]$appName = ''
-    [string]$appVersion = ''
-    [string]$appArch = ''
+    [string]$appName = 'PaperCut MF Client'
+    [string]$appVersion = '21.2.11'
+    [string]$appArch = 'x64'
     [string]$appLang = 'EN'
     [string]$appRevision = '01'
     [string]$appScriptVersion = '1.0.0'
@@ -144,13 +144,59 @@ Try {
         [String]$installPhase = 'Pre-Installation'
 
         ## Show Welcome Message, close Internet Explorer if required, allow up to 3 deferrals, verify there is enough disk space to complete the install, and persist the prompt
-        Show-InstallationWelcome -CloseApps 'processName' -CheckDiskSpace -PersistPrompt
+        Show-InstallationWelcome -CloseApps 'pc-client' -CheckDiskSpace -PersistPrompt
 
         ## Show Progress Message (with the default message)
         Show-InstallationProgress
 
         ## <Perform Pre-Installation tasks here>
 
+        ## Remove cached files if detected
+		If (Test-Path -Path "${envSystemDrive}\Cache" -PathType 'Container') {
+			Write-Log -Message "Removing cached installation files..." -Severity 1
+			Remove-File -Path "${envSystemDrive}\Cache" -Recurse
+			Remove-Folder -Path "${envSystemDrive}\Cache" -ContinueOnError $true
+		}
+
+
+		## Remove MSI Installation if detected
+		If (Get-InstalledApplication -Name 'PaperCut MF Client') {
+			Remove-MSIApplications -Name 'PaperCut MF Client'
+		}
+
+		## Clean up Program Files folders
+		If (Test-Path -Path "$envProgramFiles\PaperCut MF Client" -PathType 'Container') {
+			Remove-File -Path "$envProgramFiles\PaperCut MF Client" -Recurse
+			Remove-Folder "$envProgramFiles\PaperCut MF Client" -ContinueOnError $true
+		}
+
+		If (Test-Path -Path "$envProgramFiles\PaperCut" -PathType 'Container') {
+			Remove-File -Path "$envProgramFiles\PaperCut" -Recurse
+			Remove-Folder "$envProgramFiles\PaperCut" -ContinueOnError $true
+		}
+
+		## Clean up Program Files (x86) folders
+		If (Test-Path -Path "$envProgramFilesX86\PaperCut MF Client" -PathType 'Container') {
+			Remove-File -Path "$envProgramFilesX86\PaperCut MF Client" -Recurse
+			Remove-Folder "$envProgramFilesX86\PaperCut MF Client" -ContinueOnError $true
+		}
+
+		## Clean up Program Files (x86) folders
+		If (Test-Path -Path "$envProgramFilesX86\PaperCut" -PathType 'Container') {
+			Remove-File -Path "$envProgramFilesX86\PaperCut" -Recurse
+			Remove-Folder "$envProgramFilesX86\PaperCut" -ContinueOnError $true
+		}
+
+		## Remove remaining registry keys
+		If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
+
+		If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
 
         ##*===============================================
         ##* INSTALLATION
@@ -168,19 +214,35 @@ Try {
         }
 
         ## <Perform Installation tasks here>
-
+        $exitCode = Execute-MSI -Action "Install" -Path "pc-client-admin-deploy.msi" -Parameters "REBOOT=ReallySuppress /QN /norestart ALLUSERS=1" -PassThru
+		If (($exitCode.ExitCode -ne "0") -and ($mainExitCode -ne "3010")) { $mainExitCode = $exitCode.ExitCode }
 
         ##*===============================================
         ##* POST-INSTALLATION
         ##*===============================================
-        [String]$installPhase = 'Post-Installation'
+        [string]$installPhase = 'Post-Installation'
 
-        ## <Perform Post-Installation tasks here>
+		## <Perform Post-Installation tasks here>
+		If (Test-Path -Path "${envProgramFilesX86}\PaperCut MF Client\pc-client.exe" -PathType 'Leaf') {
+			$installLocation = "${envProgramFilesX86}\PaperCut MF Client\pc-client.exe"
+		} ElseIf (Test-Path -Path "${envProgramFiles}\PaperCut MF Client\pc-client.exe" -PathType 'Leaf') {
+			$installLocation = "${envProgramFiles}\PaperCut MF Client\pc-client.exe"
+		}
 
-        ## Display a message at the end of the install
-        ## See original PSADT Deploy-Application.ps1 file from GitHub if you want to use this feature
-    }
-    ElseIf ($deploymentType -ieq 'Uninstall') {
+		## Set a startup registry value if the client is found
+		If ($installLocation) {
+			Set-RegistryKey -Key "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "PaperCut" -Value "`"${installLocation}`" --silent" -Type "String"
+		} Else {
+			Write-Log -Message "Couldn't detect the PaperCut client after installation. Startup registry values won't be configured." -Severity 3
+		}
+
+		## Display a message at the end of the install
+		If (-not $useDefaultMsi) {
+
+		}
+	}
+	ElseIf ($deploymentType -ieq 'Uninstall')
+	{
         ##*===============================================
         ##* PRE-UNINSTALLATION
         ##*===============================================
@@ -209,7 +271,8 @@ Try {
         }
 
         ## <Perform Uninstallation tasks here>
-
+        $exitCode = Execute-MSI -Action 'Uninstall' -Path "pc-client-admin-deploy.msi" -PassThru
+		If (($exitCode.ExitCode -ne "0") -and ($mainExitCode -ne "3010")) { $mainExitCode = $exitCode.ExitCode }
 
         ##*===============================================
         ##* POST-UNINSTALLATION
@@ -217,8 +280,10 @@ Try {
         [String]$installPhase = 'Post-Uninstallation'
 
         ## <Perform Post-Uninstallation tasks here>
-
-
+        If (Get-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Value 'PaperCut') {
+			Write-Log -Message "Removing detected startup entries..." -Severity 1
+			Remove-RegistryKey -Key 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'PaperCut'
+		}
     }
     ElseIf ($deploymentType -ieq 'Repair') {
         ##*===============================================
@@ -276,8 +341,8 @@ Catch {
 # SIG # Begin signature block
 # MIImVAYJKoZIhvcNAQcCoIImRTCCJkECAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB6umCj792HhD/+
-# /WQNk1gGHgzSo1MRggAuitPaMMmBN6CCH8AwggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDZunbZfwTb9P21
+# NIdlpC43FtPHzUk+Huh6NNmMprMWqaCCH8AwggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -451,32 +516,32 @@ Catch {
 # MSswKQYDVQQDEyJTZWN0aWdvIFB1YmxpYyBDb2RlIFNpZ25pbmcgQ0EgUjM2AhEA
 # pU3fcPvc8UxUgrjysXLKMTANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEM
 # MQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQB
-# gjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCA+zpWddQl7KlRe
-# 1RjRXiF8S4n/ZVV1MCkEyY/Db/rfAzANBgkqhkiG9w0BAQEFAASCAYA6PXeRJ1cp
-# K1Sslrt9ZzNd3VvBQ1+QCQu+fNHuo/p6WsBkHdtBjN0b0qrdzYsGA7Py9TgwPZsi
-# DBkEHCNTcRyW0H2I419+R/elEdXlGfqVBdEQ/3jIvKe0K+duQMQZJWbXGjo2RzF7
-# 45NbypJg6teDZaAMyvGjy4hRb0LMkRSdBgLp1pxVUwV9auwRiZJQQPcGTCMZWwyJ
-# CstOfKaRMhnhJ4sqOhpb/18K/u/+eKckfle6Uyo70gnNWm9SoD/xGxxgATunfiyI
-# I/EoUFMg6QyRtXJjGTHdA1mfestfnfGbPgXbQQVLwi8q8UvTfcv1Uybsp8Q6rmFW
-# 6Ttb0XHx67Pdv+Bh3bXuU3WXo/A/bJoeH5uHzpfVbpKWfffI9kDxHtOJO5bf1Gxx
-# ya8WfbjRhZ+UfbfAvBG3oNmy7QYK67+2UL1+Ni85CZAnGDZXTxvUlGr4XBTSLbZE
-# Po3YJ+R/lTPUpJJ0fB9tJham6a7d/aAjlZ6KItaE0kNohfiNMDO72rmhggNLMIID
+# gjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCO4xJ8LAEOWEoV
+# vZDRHn/4iVDi0/9jgvYD1NH3YPsrSjANBgkqhkiG9w0BAQEFAASCAYAptX55OQ/t
+# I005/vke9Vi3INrobXHdOxXKSfF7KLQjItwCu1VdWxEXAWqji8uwbQzs1uU4znM7
+# JBWjQgkGrzA4PbfYb0gGxPaCs0/QRkeaX2YlZ4EMmJd2sCugl8LhwJ03P+Up0jjC
+# ifLA9QPv3WZQj0qR+iJwpJ/SOj8cTm21pt5M/VB9xF6pJVT7ZJRraTgz+burAo1+
+# TcSBnpUNCB64VMrGvlT9yLKJAWSemBT3VumHRUvv1LlMndl0VxDf4pyc0/wDZzTO
+# v7KBzqQk1M61L8DfKf/U9RciE3ywQXpBZWsxtlZzpPsJFTMYLIOuPRMVjhTcK+ph
+# rYu2X7RPPtLbrNpoGcmgu5JzZE6axkegNjGPudfXJNjvjxG7A4SgcPXTqcJvRP+L
+# /+fEPXSvEeY7HZIMkONd9gUhb1BOyRwJdKebtdOUMz9g2oJ43qTCsEo+GTJfEMot
+# o+ZBM9ih8qIjOmHD+6sKgE1edhl1Gz8N6mK/OI/xWGWqQF/+30XqFnShggNLMIID
 # RwYJKoZIhvcNAQkGMYIDODCCAzQCAQEwgZEwfTELMAkGA1UEBhMCR0IxGzAZBgNV
 # BAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4GA1UEBxMHU2FsZm9yZDEYMBYGA1UE
 # ChMPU2VjdGlnbyBMaW1pdGVkMSUwIwYDVQQDExxTZWN0aWdvIFJTQSBUaW1lIFN0
 # YW1waW5nIENBAhA5TCXhfKBtJ6hl4jvZHSLUMA0GCWCGSAFlAwQCAgUAoHkwGAYJ
-# KoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjMwNjE0MTQx
-# MjM4WjA/BgkqhkiG9w0BCQQxMgQwzpssrxnsB5Rt7Nn1q/QbpYYrr49ujIo7p66f
-# V2v+8uhh2FZ6BaxwCoFJL1lwK+7UMA0GCSqGSIb3DQEBAQUABIICAFpbPfn10ABI
-# hQ4npbZ0XnoQdVJhujIt/4OQTEbuCo/rOWH5AeQTls9DTL4lHkLEpF2e6rjb1vDr
-# SB3nVc25xEaQ8MChefoNqN/6eQjNprTu3VUwxgPZobHCCVs7E6rEJtmulpgBc2BB
-# BujMEbas+hP4aaFwBZiKMEjiyrLbHrVK/Eq/u1KfCUxYPSFIA0Ow58wCPLFXFXs6
-# 3TcKR1sn1yy4OWMV6JyswgHnH7Yv5rtphgU6CdXTpPp8yBgQgZ8XP7paG/SMmLzr
-# 9nybLoI9De4ivJAclVZwOg9O7GwGaSeO+LtcJFKmGUDiZfIARCpmF4INVEvNNzWJ
-# 1aMe9YByBeblv3XGYlAgcfv+G3ceQLldhfSdkXLsTrHv819HtusMCumGkwrKDhxO
-# ho/jx3vbZfobBHpeiO3vlDayiFXNrVuUhm7Xlp2/PZ6eyhy5nsQgkMVILfkEGogp
-# aNE5f1KeSx8JncPSnEcyIn4iP7ZMwYSYBLGt34u551sCAMaX4N3O7Sj5Z04SeBFb
-# vLbiOuDEKD1RxQS2ruSimramHoLIVdpdQJxJlPctD/el+79Fnl5DmIvMsgwnPyy2
-# ia56Rc6F4dRs7U6+wpNeNGZqFrO7butQ6wUY6s8ewDt71TwreqiKFwQkudYMNAEH
-# biTZJEoQlCS6dMaPCZC/SbTTCT+fJatk
+# KoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjMwNjE1MTYx
+# ODI1WjA/BgkqhkiG9w0BCQQxMgQwQdvTjSECWcvvVEqbKVXB0pzH86V3miWVvBNh
+# 56hkhh3ODiAbJmRG6Uza3aRvVL4MMA0GCSqGSIb3DQEBAQUABIICAAnK6QJMlXZI
+# RN5aP+benpMXLnzO3oBvtRVfFYNHv/5mqrGQTnuvhCCjMDDjyVqh5edK/0YWfu/A
+# y3VT4l8Drq2N7wVlppVB+Dm/wF1Yo1ZtrOX/JzKGLMstjZoTVx8o/D8BHYJ6dWvX
+# O5XaaNDUA2MbsqrrVZZmeRhhDJ8ZdAJ2YZD+Xm6OpdFti4cd6sKWRVEu6DUTbnIU
+# WG2IJznrz9lQirv8COd43ngJ4YMXRlVkXvdXwpcI4tKqKKnBIodeDTMCpy0eDn13
+# PJz9nmMfr6coE4pbWya2mAjThYOb/hk59jSL6zVZqbJNn83qgU24i76RwRJagHZt
+# +12l2EjKklTLl13gmk9qUdy/Lxq0GsdTfSr8DizuvaxAkg1QFEWslk6RVrQyrzTc
+# 1DVk+WMZ3sWLw4mocEghW02BjQ9xUy6b2fPB2Mp6GRXqnExb1uo86fKgULpqUp3w
+# DtSrN/zSth5+q/209QkKAFtTvdgdLNIfGQin4GVfd4hCOqLJjGktjxodoaqm5DPy
+# HJz0QNGVqwMW/kppb3GYuIljcohpSBL9uPj4mrWs/Hzvdle2x3+siew0dCcMentl
+# Sekau1EtVD+ZZwoePGPVo6Q/G+PbRFSV1l9Y/Ou9sMGNYB65x9bo4b2mOG2SNJyh
+# EcDzI9+QXBqdHSSJjFctH9rZwXWxSoGC
 # SIG # End signature block
